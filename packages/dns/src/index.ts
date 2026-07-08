@@ -1,5 +1,6 @@
-import { Address, Cell, Slice, beginCell } from '@ton/core';
-import { TonClientProvider } from '@ton-site-builder/blockchain';
+import crypto from 'node:crypto';
+import { Address, Cell, beginCell } from '@ton/core';
+import { TonClientProvider, normalizeTxHash } from '@ton-site-builder/blockchain';
 import type { TupleItem } from '@ton/ton';
 
 export interface TonTransactionMessage {
@@ -30,6 +31,10 @@ const TON_DNS_COLLECTION_ADDRESS = Address.parse(
 );
 
 const OP_CHANGE_DNS_RECORD = 0x4eb1f0f9;
+const DNS_TX_AMOUNT_NANOTONS = '200000000'; // 0.2 TON
+const DNS_TX_VALID_SECONDS = 600;
+
+type AddressTupleItem = { type: 'slice' | 'cell'; cell: Cell };
 
 export class DomainService {
   private clientProvider: TonClientProvider;
@@ -39,133 +44,48 @@ export class DomainService {
   }
 
   async resolveOwner(domain: string): Promise<string> {
-    const { label } = this.parseTonDomain(domain);
+    const itemAddrObj = await this.resolveDomainNftAddress(domain);
     const client = await this.clientProvider.getClient();
     const seqno = await this.clientProvider.getLastSeqno();
-
-    const domainCell = beginCell().storeBuffer(Buffer.from(label, 'utf-8')).endCell();
-    const labelHash = Cell.fromBoc(domainCell.toBoc())[0].hash();
-    const index = BigInt('0x' + labelHash.toString('hex'));
-
-    const res = await client.runMethod(
-      seqno,
-      TON_DNS_COLLECTION_ADDRESS,
-      'get_nft_address_by_index',
-      [{ type: 'int', value: index } as TupleItem]
-    );
-
-    const itemAddress = this.parseAddressFromResult(res.result[0]);
-    const itemAddrObj = Address.parse(itemAddress);
-
     const dataRes = await client.runMethod(seqno, itemAddrObj, 'get_nft_data');
     // get_nft_data returns (int, int, slice, slice, cell)
-    const ownerSliceItem = dataRes.result[3];
-    const ownerAddress = this.parseAddressFromResult(ownerSliceItem);
-    return ownerAddress;
+    return this.parseAddressFromResult(dataRes.result[3]);
   }
 
   async buildSetSiteRecordTxAdnl(
     domain: string,
     adnlAddressHex: string
   ): Promise<BuildSetSiteRecordTxAdnlResult> {
-    const { label } = this.parseTonDomain(domain);
-    const client = await this.clientProvider.getClient();
-    const seqno = await this.clientProvider.getLastSeqno();
-
-    const domainCell = beginCell().storeBuffer(Buffer.from(label, 'utf-8')).endCell();
-    const labelHash = Cell.fromBoc(domainCell.toBoc())[0].hash();
-    const index = BigInt('0x' + labelHash.toString('hex'));
-
-    const res = await client.runMethod(
-      seqno,
-      TON_DNS_COLLECTION_ADDRESS,
-      'get_nft_address_by_index',
-      [{ type: 'int', value: index } as TupleItem]
-    );
-
-    const itemAddress = this.parseAddressFromResult(res.result[0]);
-    const itemAddrObj = Address.parse(itemAddress);
-
-    const categorySite = TonClientProvider.dnsCategoryHash('site');
-    const adnlBytes = this.parseAdnlHex(adnlAddressHex);
+    const itemAddrObj = await this.resolveDomainNftAddress(domain);
+    const adnlBytes = this.parseHex32(adnlAddressHex, 'ADNL address');
 
     // dns_adnl_address#AD01 adnl_addr:bits256 flags:# = DNSRecord
     const dnsRecord = beginCell()
       .storeUint(0xad01, 16)
       .storeBuffer(adnlBytes)
-      .storeUint(0, 8) // flags
+      .storeUint(0, 8)
       .endCell();
 
-    const body = beginCell()
-      .storeUint(OP_CHANGE_DNS_RECORD, 32)
-      .storeUint(this.randomQueryId(), 64)
-      .storeUint(categorySite, 256)
-      .storeRef(dnsRecord)
-      .endCell();
-
-    const bodyBase64 = body.toBoc().toString('base64');
-    const message: TonTransactionMessage = {
-      address: itemAddrObj.toString({ bounceable: true }),
-      amount: '200000000', // 0.2 TON
-      payload: bodyBase64,
-    };
-
-    const validUntil = Math.floor(Date.now() / 1000) + 600;
-    const tx: TonTransaction = { validUntil, messages: [message] };
+    const { message, bodyBase64 } = this.buildDnsChangeMessage(itemAddrObj, dnsRecord);
 
     return {
-      tx,
+      tx: this.wrapTransaction(message),
       nftAddress: itemAddrObj.toString({ bounceable: true }),
       bodyBase64,
     };
   }
 
   async buildSetSiteRecordTx(domain: string, contentIdHex: string): Promise<TonTransaction> {
-    const { label } = this.parseTonDomain(domain);
-    const client = await this.clientProvider.getClient();
-    const seqno = await this.clientProvider.getLastSeqno();
-
-    const domainCell = beginCell().storeBuffer(Buffer.from(label, 'utf-8')).endCell();
-    const labelHash = Cell.fromBoc(domainCell.toBoc())[0].hash();
-    const index = BigInt('0x' + labelHash.toString('hex'));
-
-    const res = await client.runMethod(
-      seqno,
-      TON_DNS_COLLECTION_ADDRESS,
-      'get_nft_address_by_index',
-      [{ type: 'int', value: index } as TupleItem]
-    );
-
-    const itemAddress = this.parseAddressFromResult(res.result[0]);
-    const itemAddrObj = Address.parse(itemAddress);
-
-    const categorySite = TonClientProvider.dnsCategoryHash('site');
-    const bagId = this.parseBagId(contentIdHex);
+    const itemAddrObj = await this.resolveDomainNftAddress(domain);
+    const bagId = this.parseHex32(contentIdHex, 'contentId');
 
     const dnsRecord = beginCell()
       .storeUint(0x7473, 16) // dns_storage_address#7473
       .storeBuffer(bagId)
       .endCell();
 
-    const body = beginCell()
-      .storeUint(OP_CHANGE_DNS_RECORD, 32)
-      .storeUint(this.randomQueryId(), 64)
-      .storeUint(categorySite, 256)
-      .storeRef(dnsRecord)
-      .endCell();
-
-    const message: TonTransactionMessage = {
-      address: itemAddrObj.toString({ bounceable: true }),
-      amount: '200000000', // 0.2 TON in nanotons, should be enough for gas
-      payload: body.toBoc().toString('base64'),
-    };
-
-    const validUntil = Math.floor(Date.now() / 1000) + 600;
-
-    return {
-      validUntil,
-      messages: [message],
-    };
+    const { message } = this.buildDnsChangeMessage(itemAddrObj, dnsRecord);
+    return this.wrapTransaction(message);
   }
 
   async waitForTx(txHashHex: string, address: string, timeoutMs = 120000): Promise<boolean> {
@@ -177,25 +97,66 @@ export class DomainService {
     while (Date.now() < deadline) {
       const seqno = await this.clientProvider.getLastSeqno();
       const acc = await client.getAccount(seqno, addr);
-      const last = acc.account.last;
-      if (last) {
-        let currentHex: string;
-        if (typeof last.hash === 'string') {
-          try {
-            currentHex = Buffer.from(last.hash, 'base64').toString('hex');
-          } catch {
-            currentHex = last.hash;
-          }
-        } else {
-          currentHex = '';
-        }
-        if (currentHex.toLowerCase() === targetHex) {
+      const lastHash = acc.account.last?.hash;
+      if (typeof lastHash === 'string') {
+        const currentHex = normalizeTxHash(lastHash).toLowerCase();
+        if (currentHex === targetHex) {
           return true;
         }
       }
       await new Promise((r) => setTimeout(r, 5000));
     }
     return false;
+  }
+
+  /** Resolve the on-chain DNS NFT contract for a `.ton` domain label. */
+  private async resolveDomainNftAddress(domain: string): Promise<Address> {
+    const { label } = this.parseTonDomain(domain);
+    const client = await this.clientProvider.getClient();
+    const seqno = await this.clientProvider.getLastSeqno();
+
+    const domainCell = beginCell().storeBuffer(Buffer.from(label, 'utf-8')).endCell();
+    const labelHash = Cell.fromBoc(domainCell.toBoc())[0].hash();
+    const index = BigInt('0x' + labelHash.toString('hex'));
+
+    const res = await client.runMethod(
+      seqno,
+      TON_DNS_COLLECTION_ADDRESS,
+      'get_nft_address_by_index',
+      [{ type: 'int', value: index } as TupleItem]
+    );
+
+    return Address.parse(this.parseAddressFromResult(res.result[0]));
+  }
+
+  private buildDnsChangeMessage(
+    nftAddress: Address,
+    dnsRecord: Cell
+  ): { message: TonTransactionMessage; bodyBase64: string } {
+    const categorySite = TonClientProvider.dnsCategoryHash('site');
+    const body = beginCell()
+      .storeUint(OP_CHANGE_DNS_RECORD, 32)
+      .storeUint(this.randomQueryId(), 64)
+      .storeUint(categorySite, 256)
+      .storeRef(dnsRecord)
+      .endCell();
+    const bodyBase64 = body.toBoc().toString('base64');
+
+    return {
+      bodyBase64,
+      message: {
+        address: nftAddress.toString({ bounceable: true }),
+        amount: DNS_TX_AMOUNT_NANOTONS,
+        payload: bodyBase64,
+      },
+    };
+  }
+
+  private wrapTransaction(message: TonTransactionMessage): TonTransaction {
+    return {
+      validUntil: Math.floor(Date.now() / 1000) + DNS_TX_VALID_SECONDS,
+      messages: [message],
+    };
   }
 
   private parseTonDomain(domain: string): { label: string } {
@@ -210,42 +171,36 @@ export class DomainService {
     return { label };
   }
 
-  private parseAddressFromResult(item: import('@ton/ton').TupleItem): string {
-    if (item && (item as any).type === 'slice') {
-      const cell = (item as any).cell as Cell;
-      const slice = cell.beginParse();
-      const addr = slice.loadAddress();
-      return (addr as Address).toString({ bounceable: true });
+  private parseAddressFromResult(item: TupleItem): string {
+    const cell = getAddressTupleCell(item);
+    if (!cell) {
+      throw new Error('Unexpected TupleItem type for address');
     }
-    if (item && (item as any).type === 'cell') {
-      const cell = (item as any).cell as Cell;
-      const slice = cell.beginParse();
-      const addr = slice.loadAddress();
-      return (addr as Address).toString({ bounceable: true });
-    }
-    throw new Error('Unexpected TupleItem type for address');
+    return cell.beginParse().loadAddress().toString({ bounceable: true });
   }
 
-  private parseBagId(contentIdHex: string): Buffer {
-    const clean = contentIdHex.replace(/^0x/, '').toLowerCase();
+  private parseHex32(value: string, fieldName: string): Buffer {
+    const clean = value.replace(/^0x/, '').toLowerCase();
     if (!/^[0-9a-f]{64}$/.test(clean)) {
-      throw new Error('contentId must be 32-byte hex string');
-    }
-    return Buffer.from(clean, 'hex');
-  }
-
-  private parseAdnlHex(adnlHex: string): Buffer {
-    const clean = adnlHex.replace(/^0x/, '').toLowerCase();
-    if (!/^[0-9a-f]{64}$/.test(clean)) {
-      throw new Error('ADNL address must be 32-byte hex string');
+      throw new Error(`${fieldName} must be 32-byte hex string`);
     }
     return Buffer.from(clean, 'hex');
   }
 
   private randomQueryId(): bigint {
     const buf = Buffer.allocUnsafe(8);
-    require('crypto').randomFillSync(buf);
+    crypto.randomFillSync(buf);
     return BigInt('0x' + buf.toString('hex'));
   }
 }
 
+function getAddressTupleCell(item: TupleItem): Cell | null {
+  if (!item || typeof item !== 'object' || !('type' in item) || !('cell' in item)) {
+    return null;
+  }
+  const typed = item as AddressTupleItem;
+  if (typed.type === 'slice' || typed.type === 'cell') {
+    return typed.cell;
+  }
+  return null;
+}

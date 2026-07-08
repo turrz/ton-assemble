@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { FastifyReply, FastifyRequest } from 'fastify';
@@ -28,8 +27,8 @@ export function is4nDomain(domain: string): boolean {
   return /^[0-9]{4}$/.test(label);
 }
 
-export function hashAccessKey(key: string): string {
-  return crypto.createHash('sha256').update(key.trim()).digest('hex');
+export function normalizeDomain(domain: string): string {
+  return domain.toLowerCase();
 }
 
 export function normalizeSlug(slug?: string | null): string | null {

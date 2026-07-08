@@ -13,8 +13,6 @@
   },
   "dependencies": {
     "@ton-site-builder/db": "1.0.0",
-    "@ton-site-builder/dns": "1.0.0",
-    "@ton-site-builder/templates": "1.0.0",
     "dotenv": "^16.4.5",
     "telegraf": "^4.16.3",
     "zod": "^3.23.8"

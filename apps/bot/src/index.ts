@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { Telegraf, Markup } from 'telegraf';
 import dotenv from 'dotenv';
 import { z } from 'zod';
-import { Db } from '@ton-site-builder/db';
+import { Db, hashAccessKey } from '@ton-site-builder/db';
 
 // Load .env from monorepo root (when running via npm run dev --workspace=..., cwd is apps/bot)
 const rootDir = path.resolve(__dirname, '..', '..', '..');
@@ -94,8 +94,7 @@ async function handleKeyCommand(ctx: { from?: { id?: number }; reply: (text: str
   }
   try {
     const key = crypto.randomBytes(16).toString('hex');
-    const keyHash = crypto.createHash('sha256').update(key).digest('hex');
-    db.createAccessKey(keyHash, telegramId);
+    db.createAccessKey(hashAccessKey(key), telegramId);
     await ctx.reply(
       `Access key (single use, for non-4N domains):\n\n${key}\n\nSend this key when adding a non-4N domain in the app.`
     );

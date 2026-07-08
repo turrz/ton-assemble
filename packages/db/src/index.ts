@@ -1,7 +1,12 @@
+import crypto from 'node:crypto';
 import Database from 'better-sqlite3';
 import { z } from 'zod';
 import path from 'node:path';
 import fs from 'node:fs';
+
+export function hashAccessKey(key: string): string {
+  return crypto.createHash('sha256').update(key.trim()).digest('hex');
+}
 
 export type SiteStatus = 'draft' | 'uploading' | 'waiting_dns_tx' | 'published' | 'failed';
 
@@ -36,13 +41,6 @@ export interface SiteRow {
   slug: string | null;
   created_at: string;
   updated_at: string;
-}
-
-export interface AccessKeyRow {
-  id: number;
-  key_hash: string;
-  created_by: string;
-  created_at: string;
 }
 
 const siteStatusSchema = z.enum(['draft', 'uploading', 'waiting_dns_tx', 'published', 'failed']);
@@ -175,12 +173,6 @@ export class Db {
       .prepare('SELECT telegram_id, wallet_address, created_at FROM users WHERE telegram_id = ?')
       .get(telegramId) as UserRow | undefined;
     return row ?? null;
-  }
-
-  updateUserWallet(telegramId: string, walletAddress: string): void {
-    this.db
-      .prepare('UPDATE users SET wallet_address = ? WHERE telegram_id = ?')
-      .run(walletAddress, telegramId);
   }
 
   insertOrUpdateDomain(params: {

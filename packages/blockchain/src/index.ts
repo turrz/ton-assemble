@@ -1,1 +1,1 @@
-export { TonClientProvider, type TonClientConfig } from './tonClient';
+export { TonClientProvider, normalizeTxHash, type TonClientConfig } from './tonClient';

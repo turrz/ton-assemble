@@ -1,9 +1,19 @@
+import crypto from 'node:crypto';
 import { Address, Cell, beginCell } from '@ton/core';
 import { TonClient4 } from '@ton/ton';
 
 export interface TonClientConfig {
   rpcUrl: string;
   network: 'mainnet';
+}
+
+/** Normalize an account last-tx hash from base64 (TON API) to hex when possible. */
+export function normalizeTxHash(hash: string): string {
+  try {
+    return Buffer.from(hash, 'base64').toString('hex');
+  } catch {
+    return hash;
+  }
 }
 
 export class TonClientProvider {
@@ -42,36 +52,12 @@ export class TonClientProvider {
     return client.getAccount(seqno, address);
   }
 
-  async runMethod(address: Address, method: string, args?: import('@ton/ton').TupleItem[]) {
-    const client = await this.getClient();
-    const seqno = await this.getLastSeqno();
-    return client.runMethod(seqno, address, method, args);
-  }
-
   static sha256(data: Buffer): Buffer {
-    return require('crypto').createHash('sha256').update(data).digest();
+    return crypto.createHash('sha256').update(data).digest();
   }
 
   static dnsCategoryHash(name: string): bigint {
     const hash = this.sha256(Buffer.from(name, 'utf-8'));
     return BigInt('0x' + hash.toString('hex'));
   }
-
-  static dnsInternalFromDomain(domain: string): Cell {
-    const lower = domain.toLowerCase();
-    const parts = lower.split('.');
-    if (parts.length < 2 || parts[parts.length - 1] !== 'ton') {
-      throw new Error('Only .ton domains are supported');
-    }
-    const labels = [...parts].reverse();
-    const bytes: number[] = [];
-    for (const label of labels) {
-      for (const ch of Buffer.from(label, 'utf-8')) {
-        bytes.push(ch);
-      }
-      bytes.push(0);
-    }
-    return beginCell().storeBuffer(Buffer.from(bytes)).endCell();
-  }
 }
-

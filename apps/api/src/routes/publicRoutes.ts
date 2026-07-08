@@ -46,6 +46,7 @@ export async function registerPublicRoutes(
   });
 
   app.get('/connect', async (request, reply) => {
+    // Legacy standalone wallet page; the Mini App links wallets via TON Connect UI + Telegram init data.
     const query = connectQuerySchema.parse(request.query);
     reply.header('Content-Type', 'text/html; charset=utf-8');
     return reply.send(renderConnectPage(env.PUBLIC_BASE_URL, query.tg_id ?? ''));

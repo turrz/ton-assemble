@@ -1,15 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Address } from '@ton/core';
-import { Db, DomainRow, SiteRow } from '@ton-site-builder/db';
-import { TonClientProvider } from '@ton-site-builder/blockchain';
+import { Db, DomainRow, SiteRow, UserRow, hashAccessKey } from '@ton-site-builder/db';
+import { TonClientProvider, normalizeTxHash } from '@ton-site-builder/blockchain';
 import { DomainService as TonDomainService } from '@ton-site-builder/dns';
 import { TonStorageService } from '@ton-site-builder/storage';
 import { renderTemplate, TemplateId } from '@ton-site-builder/templates';
 import { ZodError } from 'zod';
 import { ApiEnv } from './config';
 import { AppError } from './middleware';
-import { ATTRIBUTION_URL, hashAccessKey, is4nDomain, normalizeSlug } from './utils';
+import type {
+  ConfirmPublishBody,
+  CreateSiteBody,
+  LinkWalletBody,
+  UpdateSiteBody,
+  VerifyDomainBody,
+} from './schemas';
+import { ATTRIBUTION_URL, is4nDomain, normalizeDomain, normalizeSlug } from './utils';
+import type { TonTransaction } from '@ton-site-builder/dns';
+
+const DNS_TX_AMOUNT_NANOTONS = '200000000';
 
 export interface BackendServices {
   domains: DomainWorkflowService;
@@ -84,19 +94,16 @@ export class DomainWorkflowService {
     }));
   }
 
-  async verifyDomain(userTelegramId: string, body: { domain: string; accessKey?: string }) {
-    const domainLower = body.domain.toLowerCase();
+  async verifyDomain(userTelegramId: string, body: VerifyDomainBody) {
+    const domainLower = normalizeDomain(body.domain);
     this.consumeAccessKeyIfRequired(domainLower, body.accessKey, 'Get a key from the bot: /key');
 
-    const user = this.db.getUser(userTelegramId);
-    if (!user || !user.wallet_address) {
-      throw new AppError(400, { ok: false, error: 'User wallet not connected' });
-    }
+    const user = requireWalletConnected(this.db, userTelegramId);
 
     try {
       const owner = await this.dnsService.resolveOwner(domainLower);
       const ownerRaw = Address.parse(owner).toRawString();
-      const walletRaw = Address.parse(user.wallet_address).toRawString();
+      const walletRaw = Address.parse(user.wallet_address!).toRawString();
       const matches = ownerRaw === walletRaw;
       const domainRow = this.db.insertOrUpdateDomain({
         telegramId: userTelegramId,
@@ -115,13 +122,13 @@ export class DomainWorkflowService {
     }
   }
 
-  consumeAccessKeyIfRequired(domain: string, accessKey: string | undefined, suffix: string): void {
+  consumeAccessKeyIfRequired(domain: string, accessKey: string | undefined, botHint: string): void {
     if (is4nDomain(domain)) return;
 
-    if (!accessKey || !accessKey.trim()) {
+    if (!accessKey?.trim()) {
       throw new AppError(403, {
         ok: false,
-        error: `Only 4N domains (4 digits .ton) are allowed without an access key. ${suffix}`,
+        error: `Only 4N domains (4 digits .ton) are allowed without an access key. ${botHint}`,
         requiresAccessKey: true,
       });
     }
@@ -142,10 +149,7 @@ export class SiteWorkflowService {
   ) {}
 
   getSiteForUser(siteId: number, userTelegramId: string) {
-    const site = this.db.getSiteById(siteId);
-    if (!site || site.telegram_id !== userTelegramId) {
-      throw new AppError(404, { ok: false, error: 'Site not found' });
-    }
+    const site = this.requireOwnedSite(siteId, userTelegramId);
     const domain = this.db.getDomainById(site.domain_id);
     return {
       ...site,
@@ -154,18 +158,11 @@ export class SiteWorkflowService {
     };
   }
 
-  createSite(
-    userTelegramId: string,
-    body: { domain: string; template: TemplateId; data: unknown; slug?: string; accessKey?: string },
-    domainWorkflow: DomainWorkflowService
-  ) {
-    const domainLower = body.domain.toLowerCase();
+  createSite(userTelegramId: string, body: CreateSiteBody, domainWorkflow: DomainWorkflowService) {
+    const domainLower = normalizeDomain(body.domain);
     domainWorkflow.consumeAccessKeyIfRequired(domainLower, body.accessKey, 'Use /key in the bot.');
 
-    const user = this.db.getUser(userTelegramId);
-    if (!user || !user.wallet_address) {
-      throw new AppError(400, { ok: false, error: 'User wallet not connected' });
-    }
+    requireWalletConnected(this.db, userTelegramId);
 
     const domainRow = this.db.getDomainByName(domainLower);
     if (!domainRow || !domainRow.verified || domainRow.telegram_id !== userTelegramId) {
@@ -194,11 +191,8 @@ export class SiteWorkflowService {
     return { ok: true, siteId: site.id };
   }
 
-  updateSite(userTelegramId: string, siteId: number, body: { template?: TemplateId; data?: unknown; slug?: string | null }) {
-    const site = this.db.getSiteById(siteId);
-    if (!site || site.telegram_id !== userTelegramId) {
-      throw new AppError(404, { ok: false, error: 'Site not found' });
-    }
+  updateSite(userTelegramId: string, siteId: number, body: UpdateSiteBody) {
+    const site = this.requireOwnedSite(siteId, userTelegramId);
 
     try {
       if (body.template !== undefined || body.data !== undefined) {
@@ -238,25 +232,11 @@ export class SiteWorkflowService {
     const previewUrl = `${this.env.PUBLIC_BASE_URL}/preview/${site.id}`;
 
     if (this.env.TON_PROXY_ADNL_HEX) {
-      const adnlRes = await this.dnsService.buildSetSiteRecordTxAdnl(domain.domain, this.env.TON_PROXY_ADNL_HEX);
-      if (site.status !== 'waiting_dns_tx') {
-        this.db.updateSiteStatus(site.id, 'waiting_dns_tx', { content_id: null });
-      }
-      return {
-        ok: true,
-        siteId: site.id,
-        contentId: null,
-        domain: domain.domain,
-        tx: adnlRes.tx,
-        previewUrl,
-        useAdnl: true,
-        adnlLinkUrl: `ton://transfer/${adnlRes.nftAddress}?amount=200000000&bin=${encodeURIComponent(adnlRes.bodyBase64)}`,
-      };
+      return this.publishViaAdnl(site, domain.domain, previewUrl);
     }
 
     if (site.status === 'waiting_dns_tx' && site.content_id) {
-      const tx = await this.dnsService.buildSetSiteRecordTx(domain.domain, site.content_id);
-      return { ok: true, siteId: site.id, contentId: site.content_id, domain: domain.domain, tx, previewUrl };
+      return this.resumeWaitingDnsTx(site, domain.domain, previewUrl);
     }
 
     if (this.db.hasPendingPublish(userTelegramId, domain.id)) {
@@ -270,24 +250,10 @@ export class SiteWorkflowService {
       throw new AppError(500, { ok: false, error: 'Storage not configured' });
     }
 
-    const tmpDir = await fs.promises.mkdtemp(path.join(process.cwd(), 'tmp-site-'));
-    await fs.promises.writeFile(path.join(tmpDir, 'index.html'), this.render.renderSite(site), 'utf-8');
-    this.db.updateSiteStatus(site.id, 'uploading');
-
-    try {
-      const uploadRes = await this.storageService.uploadStaticSite(tmpDir);
-      this.db.updateSiteStatus(site.id, 'waiting_dns_tx', { content_id: uploadRes.contentId });
-      const tx = await this.dnsService.buildSetSiteRecordTx(domain.domain, uploadRes.contentId);
-      return { ok: true, siteId: site.id, contentId: uploadRes.contentId, domain: domain.domain, tx, previewUrl };
-    } catch (err) {
-      this.db.updateSiteStatus(site.id, 'failed');
-      throw new AppError(500, { ok: false, error: getErrorMessage(err, 'Publish failed') });
-    } finally {
-      await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
-    }
+    return this.publishViaStorage(site, domain.domain, previewUrl);
   }
 
-  async confirmPublish(userTelegramId: string, siteId: number, body: { txHashHex: string; fromAddress: string }) {
+  async confirmPublish(userTelegramId: string, siteId: number, body: ConfirmPublishBody) {
     const site = this.requireOwnedSite(siteId, userTelegramId);
     this.requireVerifiedDomain(site.domain_id);
 
@@ -346,6 +312,57 @@ export class SiteWorkflowService {
     return { ok: true, siteId: newSite.id };
   }
 
+  private async publishViaAdnl(site: SiteRow, domainName: string, previewUrl: string) {
+    const adnlRes = await this.dnsService.buildSetSiteRecordTxAdnl(domainName, this.env.TON_PROXY_ADNL_HEX!);
+    if (site.status !== 'waiting_dns_tx') {
+      this.db.updateSiteStatus(site.id, 'waiting_dns_tx', { content_id: null });
+    }
+    return buildPublishResponse({
+      siteId: site.id,
+      contentId: null,
+      domain: domainName,
+      tx: adnlRes.tx,
+      previewUrl,
+      useAdnl: true,
+      adnlLinkUrl: `ton://transfer/${adnlRes.nftAddress}?amount=${DNS_TX_AMOUNT_NANOTONS}&bin=${encodeURIComponent(adnlRes.bodyBase64)}`,
+    });
+  }
+
+  private async resumeWaitingDnsTx(site: SiteRow, domainName: string, previewUrl: string) {
+    const tx = await this.dnsService.buildSetSiteRecordTx(domainName, site.content_id!);
+    return buildPublishResponse({
+      siteId: site.id,
+      contentId: site.content_id,
+      domain: domainName,
+      tx,
+      previewUrl,
+    });
+  }
+
+  private async publishViaStorage(site: SiteRow, domainName: string, previewUrl: string) {
+    const tmpDir = await fs.promises.mkdtemp(path.join(process.cwd(), 'tmp-site-'));
+    await fs.promises.writeFile(path.join(tmpDir, 'index.html'), this.render.renderSite(site), 'utf-8');
+    this.db.updateSiteStatus(site.id, 'uploading');
+
+    try {
+      const uploadRes = await this.storageService!.uploadStaticSite(tmpDir);
+      this.db.updateSiteStatus(site.id, 'waiting_dns_tx', { content_id: uploadRes.contentId });
+      const tx = await this.dnsService.buildSetSiteRecordTx(domainName, uploadRes.contentId);
+      return buildPublishResponse({
+        siteId: site.id,
+        contentId: uploadRes.contentId,
+        domain: domainName,
+        tx,
+        previewUrl,
+      });
+    } catch (err) {
+      this.db.updateSiteStatus(site.id, 'failed');
+      throw new AppError(500, { ok: false, error: getErrorMessage(err, 'Publish failed') });
+    } finally {
+      await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
   private requireOwnedSite(siteId: number, userTelegramId: string): SiteRow {
     const site = this.db.getSiteById(siteId);
     if (!site || site.telegram_id !== userTelegramId) {
@@ -369,7 +386,7 @@ export class WalletWorkflowService {
     private readonly tonClientProvider: TonClientProvider
   ) {}
 
-  linkWallet(userTelegramId: string, body: { address: string; network: string }) {
+  linkWallet(userTelegramId: string, body: LinkWalletBody) {
     if (body.network !== 'mainnet' && body.network !== '-239') {
       throw new AppError(400, { ok: false, error: 'Only mainnet network is allowed' });
     }
@@ -380,18 +397,41 @@ export class WalletWorkflowService {
   async getAccountLastTx(address: string) {
     try {
       const acc = await this.tonClientProvider.getAccountState(Address.parse(address));
-      const last = acc.account.last;
-      if (!last?.hash) return { hash: null };
-
-      try {
-        return { hash: Buffer.from(last.hash, 'base64').toString('hex') };
-      } catch {
-        return { hash: last.hash };
-      }
+      const lastHash = acc.account.last?.hash;
+      if (!lastHash) return { hash: null };
+      return { hash: normalizeTxHash(lastHash) };
     } catch {
       throw new AppError(500, { hash: null });
     }
   }
+}
+
+function requireWalletConnected(db: Db, telegramId: string): UserRow {
+  const user = db.getUser(telegramId);
+  if (!user?.wallet_address) {
+    throw new AppError(400, { ok: false, error: 'User wallet not connected' });
+  }
+  return user;
+}
+
+function buildPublishResponse(params: {
+  siteId: number;
+  contentId: string | null;
+  domain: string;
+  tx: TonTransaction;
+  previewUrl: string;
+  useAdnl?: true;
+  adnlLinkUrl?: string;
+}) {
+  return {
+    ok: true as const,
+    siteId: params.siteId,
+    contentId: params.contentId,
+    domain: params.domain,
+    tx: params.tx,
+    previewUrl: params.previewUrl,
+    ...(params.useAdnl ? { useAdnl: true as const, adnlLinkUrl: params.adnlLinkUrl } : {}),
+  };
 }
 
 function formatCreateTemplateError(err: unknown): string {
