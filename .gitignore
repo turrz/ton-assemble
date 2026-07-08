@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Environment (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# Build outputs (keep apps/api/public/ for deploy)
+dist/
+apps/web/dist/
+apps/api/public/assets/
+apps/api/public/index.html
+packages/*/src/*.js
+packages/*/src/*.js.map
+apps/web/vite.config.js
+apps/web/vite.config.d.ts
+*.tsbuildinfo
+
+# Data
+data/
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Optional
+*.local

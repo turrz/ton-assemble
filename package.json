@@ -1,0 +1,26 @@
+{
+  "name": "ton-site-builder-monorepo",
+  "version": "1.0.0",
+  "description": "Telegram Mini App for creating and publishing websites for .ton domains.",
+  "private": true,
+  "license": "MIT",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r run lint",
+    "start:bot": "pnpm --filter @ton-site-builder/bot start",
+    "start:api": "pnpm --filter @ton-site-builder/api start",
+    "dev:bot": "pnpm --filter @ton-site-builder/bot dev",
+    "dev:api": "pnpm --filter @ton-site-builder/api dev"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "packageManager": "pnpm@9.12.0"
+}

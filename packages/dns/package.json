@@ -1,0 +1,18 @@
+{
+  "name": "@ton-site-builder/dns",
+  "version": "1.0.0",
+  "description": ".ton DNS verification and transaction helpers for TonAssemble.",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "npx tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "lint": "echo \"no linter configured for dns\""
+  },
+  "dependencies": {
+    "@ton/core": "^0.63.1",
+    "@ton/ton": "^15.0.0",
+    "@ton-site-builder/blockchain": "1.0.0"
+  }
+}

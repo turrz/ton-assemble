@@ -1,0 +1,16 @@
+{
+  "name": "@ton-site-builder/templates",
+  "version": "1.0.0",
+  "description": "Static site templates for TonAssemble.",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "npx tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "lint": "echo \"no linter configured for templates\""
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}
