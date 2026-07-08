@@ -1,6 +1,9 @@
 import Logo from './Logo';
+import { useLang } from '../context/LangContext';
 
 export default function LoadingScreen() {
+  const { t } = useLang();
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-tg-bg px-4">
       <div className="flex flex-col items-center gap-8">
@@ -11,7 +14,7 @@ export default function LoadingScreen() {
           <div className="h-1 w-24 overflow-hidden rounded-full bg-white/10">
             <div className="h-full w-1/2 rounded-full bg-gradient-to-r from-[#0088CC] to-[#00C6A0] animate-loading-bar" />
           </div>
-          <p className="text-sm text-tg-hint">Loading…</p>
+          <p className="text-sm text-tg-hint">{t('loading')}</p>
         </div>
       </div>
     </div>

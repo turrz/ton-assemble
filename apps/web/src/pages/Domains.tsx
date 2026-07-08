@@ -80,7 +80,7 @@ export default function Domains() {
             disabled={verifying}
             className="rounded-xl bg-tg-button px-4 py-2.5 font-medium text-tg-button-text disabled:opacity-50"
           >
-            {verifying ? '…' : t('verify')}
+            {verifying ? t('loading') : t('verify')}
           </button>
         </div>
         {showAccessKey && (

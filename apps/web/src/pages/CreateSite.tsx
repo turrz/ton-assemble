@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { getDomains, createSite, is4nDomain } from '../api';
 import { useLang } from '../context/LangContext';
 
@@ -18,23 +18,31 @@ interface FeatureItem {
 const initialLink: LinkItem = { label: '', url: '' };
 const initialFeature: FeatureItem = { title: '', body: '' };
 
+const ACCENT_PRESETS = [
+  { name: 'Blue', hex: '#3b82f6' },
+  { name: 'Cyan', hex: '#06b6d4' },
+  { name: 'Green', hex: '#22c55e' },
+  { name: 'Orange', hex: '#f97316' },
+  { name: 'Purple', hex: '#a855f7' },
+  { name: 'Rose', hex: '#f43f5e' },
+];
+
 export default function CreateSite() {
   const navigate = useNavigate();
   const { t } = useLang();
   const [domains, setDomains] = useState<Awaited<ReturnType<typeof getDomains>>['domains']>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [domainId, setDomainId] = useState<string>('');
   const [template, setTemplate] = useState<TemplateId>('linktree');
-  const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Linktree
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [links, setLinks] = useState<LinkItem[]>([{ ...initialLink }]);
 
-  // Project
   const [name, setName] = useState('');
   const [tagline, setTagline] = useState('');
   const [description, setDescription] = useState('');
@@ -44,7 +52,6 @@ export default function CreateSite() {
   const [secondaryUrl, setSecondaryUrl] = useState('');
   const [features, setFeatures] = useState<FeatureItem[]>([{ ...initialFeature }]);
 
-  // For-sale
   const [saleDomain, setSaleDomain] = useState('');
   const [priceTon, setPriceTon] = useState('');
   const [contactTg, setContactTg] = useState('');
@@ -53,27 +60,18 @@ export default function CreateSite() {
 
   const [slug, setSlug] = useState('');
   const [accessKey, setAccessKey] = useState('');
-
-  // Theme color (all templates)
   const [accentColor, setAccentColor] = useState('#3b82f6');
-  const ACCENT_PRESETS = [
-    { name: 'Blue', hex: '#3b82f6' },
-    { name: 'Cyan', hex: '#06b6d4' },
-    { name: 'Green', hex: '#22c55e' },
-    { name: 'Orange', hex: '#f97316' },
-    { name: 'Purple', hex: '#a855f7' },
-    { name: 'Rose', hex: '#f43f5e' },
-  ];
 
   useEffect(() => {
     getDomains()
       .then((r) => r.ok && setDomains(r.domains))
-      .catch((e) => setError(e.message))
+      .catch(() => setLoadError(t('loadDomainsFailed')))
       .finally(() => setLoading(false));
-  }, []);
+  }, [t]);
 
   const verifiedDomains = domains.filter((d) => d.verified);
   const selectedDomain = domains.find((d) => String(d.id) === domainId)?.domain ?? '';
+  const effectiveDomain = (template === 'for-sale' ? saleDomain.trim() || selectedDomain : selectedDomain).trim().toLowerCase();
 
   useEffect(() => {
     if (template === 'for-sale' && selectedDomain) setSaleDomain(selectedDomain);
@@ -83,7 +81,7 @@ export default function CreateSite() {
   const setLink = (i: number, field: keyof LinkItem, value: string) => {
     setLinks((prev) => prev.map((l, j) => (j === i ? { ...l, [field]: value } : l)));
   };
-  const removeLink = (i: number) => setLinks((prev) => prev.filter((_, j) => j !== i));
+  const removeLink = (i: number) => setLinks((prev) => (prev.length <= 1 ? prev : prev.filter((_, j) => j !== i)));
 
   const addFeature = () => setFeatures((prev) => [...prev, { ...initialFeature }]);
   const setFeature = (i: number, field: keyof FeatureItem, value: string) => {
@@ -101,7 +99,7 @@ export default function CreateSite() {
   const buildData = (): unknown => {
     if (template === 'linktree') {
       const validLinks = links.filter((l) => l.label.trim() && l.url.trim());
-      if (validLinks.length === 0) throw new Error('Add at least one link');
+      if (validLinks.length === 0) throw new Error(t('addAtLeastOneLink'));
       return {
         title: title.trim() || 'My Links',
         subtitle: subtitle.trim() || undefined,
@@ -125,9 +123,9 @@ export default function CreateSite() {
       };
     }
     const price = parseFloat(priceTon);
-    if (isNaN(price) || price < 0) throw new Error('Invalid price');
+    if (isNaN(price) || price < 0) throw new Error(t('invalidPrice'));
     return {
-      domain: (saleDomain.trim() || selectedDomain).toLowerCase(),
+      domain: effectiveDomain,
       priceTon: price,
       accentColor: accentColor || undefined,
       contactTelegram: contactTg.trim() || undefined,
@@ -137,41 +135,50 @@ export default function CreateSite() {
   };
 
   const onSubmit = () => {
-    const domain = (template === 'for-sale' ? saleDomain.trim() || selectedDomain : selectedDomain).trim().toLowerCase();
-    if (!domain) {
-      setError(template === 'for-sale' ? 'Select or enter a domain' : 'Select a verified domain');
+    if (!effectiveDomain) {
+      setFormError(template === 'for-sale' ? t('enterDomainRequired') : t('selectDomainRequired'));
       return;
     }
-    if (!is4nDomain(domain) && !accessKey.trim()) {
-      setError('Access key required for non-4N domains. Get one: /key in the bot.');
+    if (!is4nDomain(effectiveDomain) && !accessKey.trim()) {
+      setFormError(t('non4nNeedKey'));
       return;
     }
-    setError(null);
+    setFormError(null);
     setSubmitting(true);
     let data: unknown;
     try {
       data = buildData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Invalid form');
+      setFormError(e instanceof Error ? e.message : t('invalidForm'));
       setSubmitting(false);
       return;
     }
     createSite({
-      domain,
+      domain: effectiveDomain,
       template,
       data,
       slug: slug.trim() || undefined,
-      accessKey: !is4nDomain(domain) ? accessKey.trim() || undefined : undefined,
+      accessKey: !is4nDomain(effectiveDomain) ? accessKey.trim() || undefined : undefined,
     })
       .then((r) => {
         if (r.ok) navigate(`/preview/${r.siteId}`);
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => setFormError(e.message))
       .finally(() => setSubmitting(false));
   };
 
+  const publicBase = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : '');
+
   if (loading) return <p className="text-sm text-tg-hint">{t('loading')}</p>;
-  if (error && !submitting) return <p className="text-sm text-red-400">{error}</p>;
+
+  if (loadError) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-red-400">{loadError}</p>
+        <Link to="/" className="btn-secondary inline-block text-center">{t('home')}</Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -180,45 +187,52 @@ export default function CreateSite() {
         <p className="mt-1 text-sm text-tg-hint">{t('step2Hint')}</p>
       </div>
 
-      <div className="card-app">
-        <label className="mb-1 block text-sm font-medium text-tg-hint">{t('domains')}</label>
-        {template === 'for-sale' ? (
-          <input
-            type="text"
-            value={saleDomain}
-            onChange={(e) => setSaleDomain(e.target.value)}
-            placeholder="example.ton"
-            className="input-app"
-          />
-        ) : (
-          <select
-            value={domainId}
-            onChange={(e) => setDomainId(e.target.value)}
-            className="input-app"
-          >
-            <option value="">{t('selectDomain')}</option>
-            {verifiedDomains.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.domain}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
+      {verifiedDomains.length === 0 && template !== 'for-sale' ? (
+        <div className="card-app space-y-3">
+          <p className="text-sm text-tg-hint">{t('noVerifiedDomains')}</p>
+          <Link to="/domains" className="btn-primary inline-block text-center">{t('goToDomains')}</Link>
+        </div>
+      ) : (
+        <div className="card-app">
+          <label className="mb-1 block text-sm font-medium text-tg-hint">{t('domains')}</label>
+          {template === 'for-sale' ? (
+            <input
+              type="text"
+              value={saleDomain}
+              onChange={(e) => setSaleDomain(e.target.value)}
+              placeholder={t('domainExamplePlaceholder')}
+              className="input-app"
+            />
+          ) : (
+            <select
+              value={domainId}
+              onChange={(e) => setDomainId(e.target.value)}
+              className="input-app"
+            >
+              <option value="">{t('selectDomain')}</option>
+              {verifiedDomains.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.domain}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
 
       <div className="card-app">
         <label className="mb-1 block text-sm font-medium text-tg-hint">{t('previewUrlSlug')}</label>
-        <p className="mb-2 text-xs text-tg-hint">{t('slugExample')} → {import.meta.env.VITE_API_URL || ''}/my-page</p>
+        <p className="mb-2 text-xs text-tg-hint">{t('slugExample')} → {publicBase}/{t('slugPlaceholder')}</p>
         <input
           type="text"
           value={slug}
           onChange={(e) => setSlug(e.target.value.replace(/[^a-z0-9-]/gi, '').toLowerCase().slice(0, 64))}
-          placeholder="my-page"
+          placeholder={t('slugPlaceholder')}
           className="input-app"
         />
       </div>
 
-      {selectedDomain && !is4nDomain(selectedDomain) && (
+      {effectiveDomain && !is4nDomain(effectiveDomain) && (
         <div className="card-app">
           <label className="mb-1 block text-sm font-medium text-tg-hint">{t('accessKeyLabel')}</label>
           <input
@@ -249,7 +263,7 @@ export default function CreateSite() {
 
       <div className="card-app">
         <label className="mb-2 block text-sm font-medium text-tg-hint">{t('themeColor')}</label>
-        <p className="mb-3 text-xs text-tg-hint">Accent color for links, buttons and highlights on the .ton site.</p>
+        <p className="mb-3 text-xs text-tg-hint">{t('themeColorHint')}</p>
         <div className="flex flex-wrap gap-2">
           {ACCENT_PRESETS.map(({ name, hex }) => (
             <button
@@ -275,14 +289,14 @@ export default function CreateSite() {
             placeholder="#3b82f6"
             className="input-app max-w-[120px] font-mono text-sm"
           />
-          <span className="text-xs text-tg-hint">hex</span>
+          <span className="text-xs text-tg-hint">{t('hexLabel')}</span>
         </div>
       </div>
 
       {template === 'linktree' && (
         <div className="card-app space-y-3">
-          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className="input-app" />
-          <input type="text" value={subtitle} onChange={(e) => setSubtitle(e.target.value)} placeholder="Subtitle (optional)" className="input-app" />
+          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('title')} className="input-app" />
+          <input type="text" value={subtitle} onChange={(e) => setSubtitle(e.target.value)} placeholder={t('subtitleOptional')} className="input-app" />
           <input
             type="url"
             value={avatarUrl}
@@ -290,14 +304,12 @@ export default function CreateSite() {
             placeholder={t('avatarUrlPlaceholder')}
             className="input-app"
           />
-          <p className="mt-1 text-xs text-tg-hint">
-            {t('avatarUrlHint')}
-          </p>
+          <p className="text-xs text-tg-hint">{t('avatarUrlHint')}</p>
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm text-tg-hint">Links</span>
+              <span className="text-sm text-tg-hint">{t('links')}</span>
               <button type="button" onClick={addLink} className="text-sm text-tg-link">
-                + Add
+                + {t('add')}
               </button>
             </div>
             {links.map((l, i) => (
@@ -316,7 +328,12 @@ export default function CreateSite() {
                   placeholder={t('linkUrlPlaceholder')}
                   className="input-app flex-1 min-w-0"
                 />
-                <button type="button" onClick={() => removeLink(i)} className="text-tg-hint hover:text-red-400">
+                <button
+                  type="button"
+                  onClick={() => removeLink(i)}
+                  disabled={links.length <= 1}
+                  className="text-tg-hint hover:text-red-400 disabled:opacity-30"
+                >
                   ×
                 </button>
               </div>
@@ -326,61 +343,25 @@ export default function CreateSite() {
       )}
 
       {template === 'project' && (
-        <div className="space-y-3">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Project name"
-            className="w-full rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-tg-text placeholder:text-tg-hint"
-          />
-          <input
-            type="text"
-            value={tagline}
-            onChange={(e) => setTagline(e.target.value)}
-            placeholder="Tagline"
-            className="w-full rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-tg-text placeholder:text-tg-hint"
-          />
+        <div className="card-app space-y-3">
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('projectName')} className="input-app" />
+          <input type="text" value={tagline} onChange={(e) => setTagline(e.target.value)} placeholder={t('tagline')} className="input-app" />
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Description"
+            placeholder={t('description')}
             rows={3}
-            className="w-full rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-tg-text placeholder:text-tg-hint"
+            className="input-app min-h-[80px]"
           />
-          <input
-            type="text"
-            value={primaryLabel}
-            onChange={(e) => setPrimaryLabel(e.target.value)}
-            placeholder="Primary button label (optional)"
-            className="w-full rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-tg-text placeholder:text-tg-hint"
-          />
-          <input
-            type="url"
-            value={primaryUrl}
-            onChange={(e) => setPrimaryUrl(e.target.value)}
-            placeholder="Primary button URL"
-            className="w-full rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-tg-text placeholder:text-tg-hint"
-          />
-          <input
-            type="text"
-            value={secondaryLabel}
-            onChange={(e) => setSecondaryLabel(e.target.value)}
-            placeholder="Secondary button label (optional)"
-            className="w-full rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-tg-text placeholder:text-tg-hint"
-          />
-          <input
-            type="url"
-            value={secondaryUrl}
-            onChange={(e) => setSecondaryUrl(e.target.value)}
-            placeholder="Secondary button URL"
-            className="w-full rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-tg-text placeholder:text-tg-hint"
-          />
+          <input type="text" value={primaryLabel} onChange={(e) => setPrimaryLabel(e.target.value)} placeholder={t('primaryButtonLabelOptional')} className="input-app" />
+          <input type="url" value={primaryUrl} onChange={(e) => setPrimaryUrl(e.target.value)} placeholder={t('primaryButtonUrl')} className="input-app" />
+          <input type="text" value={secondaryLabel} onChange={(e) => setSecondaryLabel(e.target.value)} placeholder={t('secondaryButtonLabelOptional')} className="input-app" />
+          <input type="url" value={secondaryUrl} onChange={(e) => setSecondaryUrl(e.target.value)} placeholder={t('secondaryButtonUrl')} className="input-app" />
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm text-tg-hint">Features (optional)</span>
+              <span className="text-sm text-tg-hint">{t('featuresOptional')}</span>
               <button type="button" onClick={addFeature} className="text-sm text-tg-link">
-                + Add
+                + {t('add')}
               </button>
             </div>
             {features.map((f, i) => (
@@ -389,18 +370,18 @@ export default function CreateSite() {
                   type="text"
                   value={f.title}
                   onChange={(e) => setFeature(i, 'title', e.target.value)}
-                  placeholder="Feature title"
-                  className="w-full rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-sm text-tg-text"
+                  placeholder={t('featureTitle')}
+                  className="input-app"
                 />
                 <textarea
                   value={f.body}
                   onChange={(e) => setFeature(i, 'body', e.target.value)}
-                  placeholder="Feature body"
+                  placeholder={t('featureBody')}
                   rows={2}
-                  className="w-full rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-sm text-tg-text"
+                  className="input-app min-h-[60px]"
                 />
                 <button type="button" onClick={() => removeFeature(i)} className="text-sm text-tg-hint hover:text-red-400">
-                  Remove
+                  {t('remove')}
                 </button>
               </div>
             ))}
@@ -409,47 +390,49 @@ export default function CreateSite() {
       )}
 
       {template === 'for-sale' && (
-        <div className="space-y-3">
+        <div className="card-app space-y-3">
           <input
             type="number"
             min={0}
             step={0.1}
             value={priceTon}
             onChange={(e) => setPriceTon(e.target.value)}
-            placeholder="Price (TON)"
-            className="w-full rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-tg-text placeholder:text-tg-hint"
+            placeholder={t('priceTon')}
+            className="input-app"
           />
           <input
             type="text"
             value={contactTg}
             onChange={(e) => setContactTg(e.target.value)}
-            placeholder="Contact Telegram (optional)"
-            className="w-full rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-tg-text placeholder:text-tg-hint"
+            placeholder={t('contactTelegramOptional')}
+            className="input-app"
           />
           <input
             type="email"
             value={contactEmail}
             onChange={(e) => setContactEmail(e.target.value)}
-            placeholder="Contact email (optional)"
-            className="w-full rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-tg-text placeholder:text-tg-hint"
+            placeholder={t('contactEmailOptional')}
+            className="input-app"
           />
           <textarea
             value={saleDesc}
             onChange={(e) => setSaleDesc(e.target.value)}
-            placeholder="Description (optional)"
+            placeholder={t('descriptionOptional')}
             rows={2}
-            className="w-full rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-tg-text placeholder:text-tg-hint"
+            className="input-app min-h-[60px]"
           />
         </div>
       )}
 
+      {formError && <p className="text-sm text-red-400">{formError}</p>}
+
       <button
         type="button"
         onClick={onSubmit}
-        disabled={submitting}
-        className="w-full rounded-xl bg-tg-button py-2.5 font-medium text-tg-button-text disabled:opacity-50"
+        disabled={submitting || (verifiedDomains.length === 0 && template !== 'for-sale')}
+        className="btn-primary disabled:opacity-50"
       >
-        {submitting ? 'Creating…' : 'Create & preview'}
+        {submitting ? t('creating') : t('createAndPreview')}
       </button>
     </div>
   );

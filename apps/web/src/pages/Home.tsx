@@ -1,5 +1,5 @@
 import { useTonConnectUI, TonConnectButton, useTonAddress } from '@tonconnect/ui-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { linkWallet } from '../api';
 import { useLang } from '../context/LangContext';
@@ -9,15 +9,23 @@ export default function Home() {
   const address = useTonAddress();
   const navigate = useNavigate();
   const { t } = useLang();
+  const [walletLinkError, setWalletLinkError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!tonConnectUI?.connected || !address) return;
+    if (!tonConnectUI?.connected || !address) {
+      setWalletLinkError(null);
+      return;
+    }
     const wallet = tonConnectUI.wallet;
     const account = wallet?.account;
     if (account?.chain === '-239' || account?.chain === 'mainnet') {
-      linkWallet(account.address, account.chain).catch(() => {});
+      linkWallet(account.address, account.chain)
+        .then(() => setWalletLinkError(null))
+        .catch(() => setWalletLinkError(t('walletLinkFailed')));
     }
-  }, [tonConnectUI?.connected, address, tonConnectUI?.wallet]);
+  }, [tonConnectUI?.connected, address, tonConnectUI?.wallet, t]);
+
+  const shortAddress = address ? `${address.slice(0, 8)}…${address.slice(-6)}` : '';
 
   return (
     <div className="space-y-5">
@@ -35,10 +43,13 @@ export default function Home() {
         </div>
         {tonConnectUI?.connected && address ? (
           <p className="mb-3 text-sm text-tg-hint">
-            Connected: {address.slice(0, 8)}…{address.slice(-6)}
+            {t('connectedPrefix')} {shortAddress}
           </p>
         ) : (
           <p className="mb-3 text-sm text-tg-hint">{t('connectWalletHint')}</p>
+        )}
+        {walletLinkError && (
+          <p className="mb-3 text-sm text-red-400">{walletLinkError}</p>
         )}
         <TonConnectButton />
       </section>

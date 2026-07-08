@@ -41,6 +41,7 @@ export async function getDomains(): Promise<{
       status: string;
       data_json: string;
       content_id: string | null;
+      slug: string | null;
       created_at: string;
     }>;
   }>;

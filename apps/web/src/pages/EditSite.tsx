@@ -18,6 +18,15 @@ interface FeatureItem {
 const initialLink: LinkItem = { label: '', url: '' };
 const initialFeature: FeatureItem = { title: '', body: '' };
 
+const ACCENT_PRESETS = [
+  { name: 'Blue', hex: '#3b82f6' },
+  { name: 'Cyan', hex: '#06b6d4' },
+  { name: 'Green', hex: '#22c55e' },
+  { name: 'Orange', hex: '#f97316' },
+  { name: 'Purple', hex: '#a855f7' },
+  { name: 'Rose', hex: '#f43f5e' },
+];
+
 export default function EditSite() {
   const { siteId } = useParams<{ siteId: string }>();
   const navigate = useNavigate();
@@ -97,7 +106,7 @@ export default function EditSite() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, t]);
 
   const ensureUrl = (raw: string): string => {
     const s = raw.trim();
@@ -109,7 +118,7 @@ export default function EditSite() {
   const buildData = (): unknown => {
     if (template === 'linktree') {
       const validLinks = links.filter((l) => l.label.trim() && l.url.trim());
-      if (validLinks.length === 0) throw new Error('Add at least one link');
+      if (validLinks.length === 0) throw new Error(t('addAtLeastOneLink'));
       return {
         title: title.trim() || 'My Links',
         subtitle: subtitle.trim() || undefined,
@@ -133,7 +142,7 @@ export default function EditSite() {
       };
     }
     const price = parseFloat(priceTon);
-    if (isNaN(price) || price < 0) throw new Error('Invalid price');
+    if (isNaN(price) || price < 0) throw new Error(t('invalidPrice'));
     return {
       domain: saleDomain.trim().toLowerCase(),
       priceTon: price,
@@ -151,7 +160,7 @@ export default function EditSite() {
     try {
       data = buildData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Invalid form');
+      setError(e instanceof Error ? e.message : t('invalidForm'));
       setSubmitting(false);
       return;
     }
@@ -165,24 +174,15 @@ export default function EditSite() {
   const setLink = (i: number, field: keyof LinkItem, value: string) => {
     setLinks((prev) => prev.map((l, j) => (j === i ? { ...l, [field]: value } : l)));
   };
-  const removeLink = (i: number) => setLinks((prev) => prev.filter((_, j) => j !== i));
+  const removeLink = (i: number) => setLinks((prev) => (prev.length <= 1 ? prev : prev.filter((_, j) => j !== i)));
   const addFeature = () => setFeatures((prev) => [...prev, { ...initialFeature }]);
   const setFeature = (i: number, field: keyof FeatureItem, value: string) => {
     setFeatures((prev) => prev.map((f, j) => (j === i ? { ...f, [field]: value } : f)));
   };
   const removeFeature = (i: number) => setFeatures((prev) => prev.filter((_, j) => j !== i));
 
-  const ACCENT_PRESETS = [
-    { name: 'Blue', hex: '#3b82f6' },
-    { name: 'Cyan', hex: '#06b6d4' },
-    { name: 'Green', hex: '#22c55e' },
-    { name: 'Orange', hex: '#f97316' },
-    { name: 'Purple', hex: '#a855f7' },
-    { name: 'Rose', hex: '#f43f5e' },
-  ];
-
-  if (loading) return <p className="text-sm text-tg-hint">Loading…</p>;
-  if (error && !submitting) {
+  if (loading) return <p className="text-sm text-tg-hint">{t('loading')}</p>;
+  if (error && !submitting && !domainName) {
     return (
       <div className="space-y-4">
         <p className="text-sm text-red-400">{error}</p>
@@ -206,7 +206,7 @@ export default function EditSite() {
           type="text"
           value={slug}
           onChange={(e) => setSlug(e.target.value.replace(/[^a-z0-9-]/gi, '').toLowerCase().slice(0, 64))}
-          placeholder="my-page"
+          placeholder={t('slugPlaceholder')}
           className="input-app"
         />
       </div>
@@ -240,19 +240,19 @@ export default function EditSite() {
 
       {template === 'linktree' && (
         <div className="card-app space-y-3">
-          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className="input-app" />
-          <input type="text" value={subtitle} onChange={(e) => setSubtitle(e.target.value)} placeholder="Subtitle" className="input-app" />
-          <input type="url" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="Avatar URL" className="input-app" />
+          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('title')} className="input-app" />
+          <input type="text" value={subtitle} onChange={(e) => setSubtitle(e.target.value)} placeholder={t('subtitle')} className="input-app" />
+          <input type="url" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder={t('avatarUrlPlaceholder')} className="input-app" />
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm text-tg-hint">Links</span>
-              <button type="button" onClick={addLink} className="text-sm text-tg-link">+ Add</button>
+              <span className="text-sm text-tg-hint">{t('links')}</span>
+              <button type="button" onClick={addLink} className="text-sm text-tg-link">+ {t('add')}</button>
             </div>
             {links.map((l, i) => (
               <div key={i} className="mb-2 flex gap-2">
-                <input type="text" value={l.label} onChange={(e) => setLink(i, 'label', e.target.value)} placeholder="Label" className="flex-1 rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-sm text-tg-text" />
-                <input type="url" value={l.url} onChange={(e) => setLink(i, 'url', e.target.value)} placeholder="URL" className="flex-1 rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-sm text-tg-text" />
-                <button type="button" onClick={() => removeLink(i)} className="text-tg-hint hover:text-red-400">×</button>
+                <input type="text" value={l.label} onChange={(e) => setLink(i, 'label', e.target.value)} placeholder={t('linkLabel')} className="input-app flex-1 min-w-0" />
+                <input type="url" value={l.url} onChange={(e) => setLink(i, 'url', e.target.value)} placeholder={t('linkUrlPlaceholder')} className="input-app flex-1 min-w-0" />
+                <button type="button" onClick={() => removeLink(i)} disabled={links.length <= 1} className="text-tg-hint hover:text-red-400 disabled:opacity-30">×</button>
               </div>
             ))}
           </div>
@@ -261,22 +261,22 @@ export default function EditSite() {
 
       {template === 'project' && (
         <div className="card-app space-y-3">
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Project name" className="input-app" />
-          <input type="text" value={tagline} onChange={(e) => setTagline(e.target.value)} placeholder="Tagline" className="input-app" />
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" className="input-app min-h-[80px]" />
-          <input type="text" value={primaryLabel} onChange={(e) => setPrimaryLabel(e.target.value)} placeholder="Primary button label" className="input-app" />
-          <input type="url" value={primaryUrl} onChange={(e) => setPrimaryUrl(e.target.value)} placeholder="Primary button URL" className="input-app" />
-          <input type="text" value={secondaryLabel} onChange={(e) => setSecondaryLabel(e.target.value)} placeholder="Secondary button label" className="input-app" />
-          <input type="url" value={secondaryUrl} onChange={(e) => setSecondaryUrl(e.target.value)} placeholder="Secondary button URL" className="input-app" />
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('projectName')} className="input-app" />
+          <input type="text" value={tagline} onChange={(e) => setTagline(e.target.value)} placeholder={t('tagline')} className="input-app" />
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('description')} className="input-app min-h-[80px]" />
+          <input type="text" value={primaryLabel} onChange={(e) => setPrimaryLabel(e.target.value)} placeholder={t('primaryButton')} className="input-app" />
+          <input type="url" value={primaryUrl} onChange={(e) => setPrimaryUrl(e.target.value)} placeholder={t('primaryButtonUrl')} className="input-app" />
+          <input type="text" value={secondaryLabel} onChange={(e) => setSecondaryLabel(e.target.value)} placeholder={t('secondaryButton')} className="input-app" />
+          <input type="url" value={secondaryUrl} onChange={(e) => setSecondaryUrl(e.target.value)} placeholder={t('secondaryButtonUrl')} className="input-app" />
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm text-tg-hint">Features</span>
-              <button type="button" onClick={addFeature} className="text-sm text-tg-link">+ Add</button>
+              <span className="text-sm text-tg-hint">{t('features')}</span>
+              <button type="button" onClick={addFeature} className="text-sm text-tg-link">+ {t('add')}</button>
             </div>
             {features.map((f, i) => (
               <div key={i} className="mb-2 flex gap-2">
-                <input type="text" value={f.title} onChange={(e) => setFeature(i, 'title', e.target.value)} placeholder="Title" className="flex-1 rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-sm text-tg-text" />
-                <input type="text" value={f.body} onChange={(e) => setFeature(i, 'body', e.target.value)} placeholder="Body" className="flex-1 rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-sm text-tg-text" />
+                <input type="text" value={f.title} onChange={(e) => setFeature(i, 'title', e.target.value)} placeholder={t('featureTitle')} className="input-app flex-1 min-w-0" />
+                <input type="text" value={f.body} onChange={(e) => setFeature(i, 'body', e.target.value)} placeholder={t('featureBody')} className="input-app flex-1 min-w-0" />
                 <button type="button" onClick={() => removeFeature(i)} className="text-tg-hint hover:text-red-400">×</button>
               </div>
             ))}
@@ -286,11 +286,11 @@ export default function EditSite() {
 
       {template === 'for-sale' && (
         <div className="card-app space-y-3">
-          <input type="text" value={saleDomain} onChange={(e) => setSaleDomain(e.target.value)} placeholder="Domain" className="input-app" />
-          <input type="text" value={priceTon} onChange={(e) => setPriceTon(e.target.value)} placeholder="Price in TON" className="input-app" />
-          <input type="text" value={contactTg} onChange={(e) => setContactTg(e.target.value)} placeholder="Telegram" className="input-app" />
-          <input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="Email" className="input-app" />
-          <textarea value={saleDesc} onChange={(e) => setSaleDesc(e.target.value)} placeholder="Description" className="input-app min-h-[60px]" />
+          <input type="text" value={saleDomain} onChange={(e) => setSaleDomain(e.target.value)} placeholder={t('domainForSale')} className="input-app" />
+          <input type="text" value={priceTon} onChange={(e) => setPriceTon(e.target.value)} placeholder={t('priceTon')} className="input-app" />
+          <input type="text" value={contactTg} onChange={(e) => setContactTg(e.target.value)} placeholder={t('contactTelegram')} className="input-app" />
+          <input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder={t('contactEmail')} className="input-app" />
+          <textarea value={saleDesc} onChange={(e) => setSaleDesc(e.target.value)} placeholder={t('description')} className="input-app min-h-[60px]" />
         </div>
       )}
 

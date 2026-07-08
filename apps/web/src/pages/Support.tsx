@@ -5,13 +5,19 @@ import { useLang } from '../context/LangContext';
 export default function Support() {
   const { t } = useLang();
   const [config, setConfig] = useState<Awaited<ReturnType<typeof getSupportConfig>> | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getSupportConfig()
       .then(setConfig)
-      .catch((e) => setError(e.message));
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }, []);
+
+  if (loading) {
+    return <p className="text-sm text-tg-hint">{t('loading')}</p>;
+  }
 
   if (error) return <p className="text-sm text-red-400">{error}</p>;
 
