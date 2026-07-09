@@ -22,57 +22,29 @@ It demonstrates a production-style TypeScript monorepo with a Fastify API, Teleg
 
 The flow below follows the main user journey from onboarding to publish.
 
-### Home
+<p align="center">
+  <img src="assets/screenshots/main-page-1.png" width="330" alt="TonAssemble home screen with onboarding steps">
+  <img src="assets/screenshots/ton-connect.png" width="330" alt="TON Connect wallet authorization dialog">
+</p>
+<p align="center"><em>Start from the onboarding home screen, then authorize your TON wallet with TON Connect.</em></p>
 
 <p align="center">
-  <img src="assets/screenshots/main-page-1.png" alt="TonAssemble home screen with onboarding steps" width="420">
+  <img src="assets/screenshots/domains-page.png" width="330" alt="Domains page with verified .ton domains">
+  <img src="assets/screenshots/create-site-1.png" width="330" alt="Create site form with domain and template selection">
 </p>
-<p align="center"><em>Home screen with the onboarding checklist: connect a wallet, verify a domain, then create a site.</em></p>
-
-### Connect wallet
+<p align="center"><em>Verify `.ton` domain ownership on-chain, then pick a domain, template, and optional preview slug.</em></p>
 
 <p align="center">
-  <img src="assets/screenshots/ton-connect.png" alt="TON Connect wallet authorization dialog" width="420">
+  <img src="assets/screenshots/create-site-4.png" width="330" alt="Create site form with features and preview action">
+  <img src="assets/screenshots/preview-page-1.png" width="330" alt="Site preview with publish action">
 </p>
-<p align="center"><em>TON Connect authorization before the app can read your wallet address and link it to your Telegram account.</em></p>
-
-### Verify domain
+<p align="center"><em>Add content and features, then preview the rendered site and confirm everything before publishing.</em></p>
 
 <p align="center">
-  <img src="assets/screenshots/domains-page.png" alt="Domains page with verified .ton domains" width="420">
+  <img src="assets/screenshots/connect-to-proxy.png" width="330" alt="Publish flow with wallet signing QR code">
+  <img src="assets/screenshots/preview-page-2.png" width="330" alt="Published site preview with feature sections">
 </p>
-<p align="center"><em>Add a `.ton` domain and verify on-chain ownership before creating a site.</em></p>
-
-### Create site
-
-<p align="center">
-  <img src="assets/screenshots/create-site-1.png" alt="Create site form with domain and template selection" width="420">
-</p>
-<p align="center"><em>Choose a verified domain, optional preview slug, template, and access key when required.</em></p>
-
-<p align="center">
-  <img src="assets/screenshots/create-site-2.png" alt="Create site form with template and theme customization" width="420">
-</p>
-<p align="center"><em>Pick a template, set the theme color, and fill in site content.</em></p>
-
-<p align="center">
-  <img src="assets/screenshots/create-site-4.png" alt="Create site form with features and preview action" width="420">
-</p>
-<p align="center"><em>Add navigation links and feature blocks, then continue to create the site and open the preview.</em></p>
-
-### Preview
-
-<p align="center">
-  <img src="assets/screenshots/preview-page-1.png" alt="Site preview with publish action" width="420">
-</p>
-<p align="center"><em>Preview the rendered site and confirm layout, links, and content before publishing.</em></p>
-
-### Publish
-
-<p align="center">
-  <img src="assets/screenshots/connect-to-proxy.png" alt="Publish flow with wallet signing QR code" width="420">
-</p>
-<p align="center"><em>Sign the TON DNS transaction in your wallet to link the domain to TonAssemble and go live.</em></p>
+<p align="center"><em>Sign the DNS transaction in your wallet to go live, then browse the finished site on your domain.</em></p>
 
 ## Tech Stack
 
